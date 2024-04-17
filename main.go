@@ -141,19 +141,31 @@ func main() {
 			Configure: func(config *tfprotov6.DynamicValue) (map[string]*Function, []*tfprotov6.Diagnostic) {
 				res, err := config.Unmarshal(tftypes.Map{ElementType: tftypes.String})
 				if err != nil {
-					panic(err)
+					return nil, []*tfprotov6.Diagnostic{&tfprotov6.Diagnostic{
+						Severity: tfprotov6.DiagnosticSeverityError,
+						Summary:  "Invalid configure payload",
+						Detail:   err.Error(),
+					}}
 				}
 				cfg := make(map[string]tftypes.Value)
 				err = res.As(&cfg)
 				if err != nil {
-					panic(err)
+					return nil, []*tfprotov6.Diagnostic{&tfprotov6.Diagnostic{
+						Severity: tfprotov6.DiagnosticSeverityError,
+						Summary:  "Invalid configure payload",
+						Detail:   err.Error(),
+					}}
 				}
 
 				codeVal := cfg["lua"]
 				var code string
 				err = codeVal.As(&code)
 				if err != nil {
-					panic(err)
+					return nil, []*tfprotov6.Diagnostic{&tfprotov6.Diagnostic{
+						Severity: tfprotov6.DiagnosticSeverityError,
+						Summary:  "Invalid configure payload",
+						Detail:   err.Error(),
+					}}
 				}
 
 				functions := make(map[string]*Function)
@@ -163,8 +175,6 @@ func main() {
 				funcs := regex.FindAllStringSubmatch(code, -1)
 				for _, bfn := range funcs {
 					fn := strings.TrimSpace(bfn[1])
-					println(fn)
-					//provider.AddFunction(fn, &function.Spec{})
 					functions[fn] = &Function{
 						tfprotov6.Function{
 							VariadicParameter: &tfprotov6.FunctionParameter{
@@ -180,49 +190,36 @@ func main() {
 							l := lua.NewState()
 							lua.OpenLibraries(l)
 
-							// Define main function
+							// Load lua code
 							if err := lua.DoString(l, code); err != nil {
 								return nil, &tfprotov6.FunctionError{Text: err.Error()}
 							}
 
-							// Setup main call
+							// Setup function call
 							l.Global(fn)
+
+							// Check valid function loaded
 							if !l.IsFunction(-1) {
 								return nil, &tfprotov6.FunctionError{Text: `missing or invalid "return <function>" at end of input`}
 							}
 
+							// Load arguments
 							for _, arg := range args {
-								// Decode using cty directly as it supports DynamicPseudoType
-								var argCty cty.Value
-								if len(arg.MsgPack) != 0 {
-									argCty, err = msgpack.Unmarshal(arg.MsgPack, cty.DynamicPseudoType)
-								} else if len(arg.JSON) != 0 {
-									argCty, err = json.Unmarshal(arg.JSON, cty.DynamicPseudoType)
-								} else {
-									panic("unknown encoding")
-								}
-
-								err := CtyToLua(argCty, l)
+								err := ProtoToLua(arg, l)
 								if err != nil {
 									return nil, &tfprotov6.FunctionError{Text: err.Error()}
 								}
 							}
 
-							// Call main, expecting one return value
+							// Call function, expecting one return value
 							l.Call(len(args), 1)
 
 							// Retrieve result
-							ctyVal, err := LuaToCty(l)
+							val, err := LuaToProto(l)
 							if err != nil {
 								return nil, &tfprotov6.FunctionError{Text: err.Error()}
 							}
-							result, err := msgpack.Marshal(ctyVal, cty.DynamicPseudoType)
-							if err != nil {
-								return nil, &tfprotov6.FunctionError{Text: err.Error()}
-							}
-							return &tfprotov6.DynamicValue{
-								MsgPack: result,
-							}, nil
+							return val, nil
 						},
 					}
 				}
@@ -261,49 +258,33 @@ func main() {
 						l := lua.NewState()
 						lua.OpenLibraries(l)
 
-						// Define main function
+						// Load lua code
 						if err := lua.DoString(l, code); err != nil {
 							return nil, &tfprotov6.FunctionError{Text: err.Error()}
 						}
 
-						// Setup main call
-						//l.Global(function)
+						// Check valid function loaded
 						if !l.IsFunction(-1) {
 							return nil, &tfprotov6.FunctionError{Text: `missing or invalid "return <function>" at end of input`}
 						}
 
+						// Load arguments
 						for _, arg := range args {
-							// Decode using cty directly as it supports DynamicPseudoType
-							var argCty cty.Value
-							if len(arg.MsgPack) != 0 {
-								argCty, err = msgpack.Unmarshal(arg.MsgPack, cty.DynamicPseudoType)
-							} else if len(arg.JSON) != 0 {
-								argCty, err = json.Unmarshal(arg.JSON, cty.DynamicPseudoType)
-							} else {
-								panic("unknown encoding")
-							}
-
-							err := CtyToLua(argCty, l)
+							err := ProtoToLua(arg, l)
 							if err != nil {
 								return nil, &tfprotov6.FunctionError{Text: err.Error()}
 							}
 						}
 
-						// Call main, expecting one return value
+						// Call function, expecting one return value
 						l.Call(len(args), 1)
 
 						// Retrieve result
-						ctyVal, err := LuaToCty(l)
+						val, err := LuaToProto(l)
 						if err != nil {
 							return nil, &tfprotov6.FunctionError{Text: err.Error()}
 						}
-						result, err := msgpack.Marshal(ctyVal, cty.DynamicPseudoType)
-						if err != nil {
-							return nil, &tfprotov6.FunctionError{Text: err.Error()}
-						}
-						return &tfprotov6.DynamicValue{
-							MsgPack: result,
-						}, nil
+						return val, nil
 					},
 				},
 			},
@@ -313,6 +294,45 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+}
+
+func ProtoToLua(arg *tfprotov6.DynamicValue, l *lua.State) error {
+	argCty, err := ProtoToCty(arg)
+	if err != nil {
+		return err
+	}
+
+	return CtyToLua(argCty, l)
+}
+
+func LuaToProto(l *lua.State) (*tfprotov6.DynamicValue, error) {
+	argCty, err := LuaToCty(l)
+	if err != nil {
+		return nil, err
+	}
+	return CtyToProto(argCty)
+}
+
+func ProtoToCty(arg *tfprotov6.DynamicValue) (cty.Value, error) {
+	// Decode using cty directly as it supports DynamicPseudoType
+	// This is inspired by github.com/apparentlymart/go-tf-func-provider
+	if len(arg.MsgPack) != 0 {
+		return msgpack.Unmarshal(arg.MsgPack, cty.DynamicPseudoType)
+	}
+	if len(arg.JSON) != 0 {
+		return json.Unmarshal(arg.JSON, cty.DynamicPseudoType)
+	}
+	panic("unknown encoding")
+}
+
+func CtyToProto(ctyVal cty.Value) (*tfprotov6.DynamicValue, error) {
+	result, err := msgpack.Marshal(ctyVal, cty.DynamicPseudoType)
+	if err != nil {
+		return nil, err
+	}
+	return &tfprotov6.DynamicValue{
+		MsgPack: result,
+	}, nil
 }
 
 func CtyToLua(arg cty.Value, l *lua.State) error {
