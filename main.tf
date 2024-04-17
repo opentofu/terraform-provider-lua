@@ -7,14 +7,14 @@ terraform {
   }
 }
 
-/*output "test_simple" {
+output "test_simple" {
 	value = provider::tester::exec(file("./main.lua"), tomap({"foo": {"bar": 190}}))
-}*/
+}
 
 provider "tester" {
-	lua = file("./main.lua")
+	lua = file("./lib.lua")
 }
 
 output "test" {
-	value = provider::tester::main(tomap({"foo": {"bar": 190}}))
+	value = provider::tester::echo(tomap({"foo": {"bar": 190}}))
 }
