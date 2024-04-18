@@ -1,6 +1,6 @@
 # terraform-provider-lua
 
-This is a OpenTofu and Terraform function provider based on terraform-plugin-go.
+This is an experimental OpenTofu and Terraform function provider based on terraform-plugin-go.
 
 It provides an "exec" function which takes a lua program as the first parameter and passes all additional parameters to the function defined in the lua file.
 
