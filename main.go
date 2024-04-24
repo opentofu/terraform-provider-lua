@@ -133,7 +133,7 @@ func main() {
 						&tfprotov6.SchemaAttribute{
 							Name:     "lua",
 							Type:     tftypes.String,
-							Required: true,
+							Required: false,
 						},
 					},
 				},
