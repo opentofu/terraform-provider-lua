@@ -392,12 +392,12 @@ func CtyToLua(arg cty.Value, l *lua.State) error {
 
 func LuaToCty(l *lua.State) (cty.Value, error) {
 	if l.IsNone(-1) {
-		return cty.NilVal, fmt.Errorf("none value should not be returned")
+		return cty.NullVal(cty.DynamicPseudoType), fmt.Errorf("none value should not be returned")
 	}
 
 	switch t := l.TypeOf(-1); t {
 	case lua.TypeNil:
-		return cty.NilVal, nil
+		return cty.NullVal(cty.DynamicPseudoType), nil
 	case lua.TypeBoolean:
 		return cty.BoolVal(l.ToBoolean(-1)), nil
 	case lua.TypeNumber:
@@ -421,7 +421,7 @@ func LuaToCty(l *lua.State) (cty.Value, error) {
 			// Decode key (also modifies)
 			key, ok := l.ToString(-1)
 			if !ok {
-				return cty.NilVal, fmt.Errorf("bad table index")
+				return cty.NullVal(cty.DynamicPseudoType), fmt.Errorf("bad table index")
 			}
 
 			l.Pop(1)
@@ -453,8 +453,8 @@ func LuaToCty(l *lua.State) (cty.Value, error) {
 				return cty.ObjectVal(mv), nil
 			}
 		}
-		return cty.ListVal(av), nil
+		return cty.TupleVal(av), nil
 	default:
-		return cty.NilVal, fmt.Errorf("unhanded return type %s!", t)
+		return cty.NullVal(cty.DynamicPseudoType), fmt.Errorf("unhanded return type %s!", t)
 	}
 }

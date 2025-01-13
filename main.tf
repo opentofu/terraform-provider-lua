@@ -18,3 +18,15 @@ provider "tester" {
 output "test" {
 	value = provider::tester::echo(tomap({"foo": {"bar": 190}}))
 }
+
+output "norm_0" {
+  value = provider::tester::normalize([])
+}
+
+output "norm_1" {
+  value = provider::tester::normalize([1])
+}
+
+output "norm_2" {
+  value = provider::tester::normalize([1, {"foo": "bar"}])
+}
